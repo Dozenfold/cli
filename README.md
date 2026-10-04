@@ -1,8 +1,9 @@
 # Dozenfold CLI
 
-Release tooling for uploading private, tenant-scoped browser source maps to Dozenfold. The CLI
-injects a debug ID into each minified bundle/map pair, uploads the map, reads private artifact
-status back, and can verify that the exact deployed CDN bytes match the local build.
+Release tooling for Dozenfold. The CLI marks each deployed release, and uploads private,
+tenant-scoped browser source maps: it injects a debug ID into each minified bundle/map pair,
+uploads the map, reads private artifact status back, and can verify that the exact deployed CDN
+bytes match the local build.
 
 ## Install
 
@@ -50,6 +51,21 @@ DOZENFOLD_SOURCE_MAP_TOKEN="$DOZENFOLD_SOURCE_MAP_TOKEN" \
 The release value must exactly match the release configured in the Dozenfold storefront SDK.
 Reusing one release for different builds is unsupported.
 
+## Mark a release
+
+Run this after each deploy. Dozenfold starts the release's before/after comparison and tags new
+storefront events with it:
+
+```bash
+DOZENFOLD_SOURCE_MAP_TOKEN="$DOZENFOLD_SOURCE_MAP_TOKEN" \
+  npx dozenfold releases create \
+  --release "git-$GITHUB_SHA" \
+  --shop shop.myshopify.com \
+  --note "Deploy $GITHUB_SHA"
+```
+
+Credentials created before October 4, 2026 cannot mark releases; create a new one.
+
 ## GitHub Actions
 
 Use the action after the injected bundle is built. Keep the token in GitHub Actions secrets:
@@ -67,6 +83,12 @@ Use the action after the injected bundle is built. Keep the token in GitHub Acti
     command: verify
     verify-cdn: 'true'
     manifest: dozenfold-source-maps.json
+    shop: shop.myshopify.com
+    token: ${{ secrets.DOZENFOLD_SOURCE_MAP_TOKEN }}
+- uses: Dozenfold/cli@v1
+  with:
+    command: release
+    release: git-${{ github.sha }}
     shop: shop.myshopify.com
     token: ${{ secrets.DOZENFOLD_SOURCE_MAP_TOKEN }}
 ```

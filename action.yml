@@ -1,27 +1,30 @@
 name: Dozenfold source maps
-description: Upload and verify an exact release-scoped Dozenfold source-map manifest.
+description: Mark a deployed release and upload or verify its private, release-scoped Dozenfold source maps.
 branding:
   icon: upload-cloud
   color: purple
 inputs:
   manifest:
-    description: Path to the injected version 2 Dozenfold source-map manifest.
-    required: true
+    description: Path to the injected version 2 Dozenfold source-map manifest (upload and verify).
+    required: false
   shop:
     description: Canonical shop hostname that owns the credential and artifacts.
     required: true
   release:
-    description: Immutable release ID. Overrides the manifest release when supplied.
+    description: Immutable release ID. Required for release; overrides the manifest release for upload and verify.
+    required: false
+  note:
+    description: Optional release note, up to 280 characters (release command only).
     required: false
   token:
-    description: Shop-scoped Dozenfold source-map credential. Pass a GitHub Actions secret.
+    description: Shop-scoped Dozenfold CI credential. Pass a GitHub Actions secret.
     required: true
   endpoint:
     description: Dozenfold ingest origin.
     required: false
     default: https://ingest.dozenfold.com
   command:
-    description: upload (upload then verify) or verify (readiness only).
+    description: release (mark a deployed release), upload (upload then verify) or verify (readiness only).
     required: false
     default: upload
   verify-cdn:

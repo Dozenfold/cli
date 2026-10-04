@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import {
+  createReleaseMarker,
   injectSourceMapDebugIds,
   runSourceMapCommand,
   SourceMapCliError,
@@ -9,12 +10,36 @@ const USAGE = `Usage:
   dozenfold source-maps upload --manifest <path> --shop <shop> [--release <id>] [--endpoint <url>] [--json]
   dozenfold source-maps verify --manifest <path> --shop <shop> [--release <id>] [--endpoint <url>] [--cdn] [--json]
   dozenfold source-maps inject --manifest <path> [--json]
+  dozenfold releases create --release <id> --shop <shop> [--note <text>] [--endpoint <url>] [--json]
 
 Authentication:
-  Set DOZENFOLD_SOURCE_MAP_TOKEN to a shop-scoped source-map credential.
+  Set DOZENFOLD_SOURCE_MAP_TOKEN to a shop-scoped Dozenfold CI credential.
 `;
 
+function parseReleaseArgs(argv) {
+  const options = { json: false };
+  for (let index = 2; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === '--json') {
+      options.json = true;
+      continue;
+    }
+    if (!['--release', '--shop', '--note', '--endpoint'].includes(arg)) {
+      throw new SourceMapCliError(`Unknown option: ${arg}\n\n${USAGE.trim()}`);
+    }
+    const value = argv[index + 1];
+    if (!value || value.startsWith('--')) throw new SourceMapCliError(`Missing value for ${arg}.`);
+    options[arg.slice(2)] = value;
+    index += 1;
+  }
+  if (!options.release || !options.shop) throw new SourceMapCliError(USAGE.trim());
+  return options;
+}
+
 function parseArgs(argv) {
+  if (argv[0] === 'releases' && argv[1] === 'create') {
+    return { command: 'release', ...parseReleaseArgs(argv) };
+  }
   if (argv[0] !== 'source-maps' || !['upload', 'verify', 'inject'].includes(argv[1])) {
     throw new SourceMapCliError(USAGE.trim());
   }
@@ -48,7 +73,19 @@ function parseArgs(argv) {
 
 try {
   const options = parseArgs(process.argv.slice(2));
-  if (options.command === 'inject') {
+  if (options.command === 'release') {
+    const marked = await createReleaseMarker({
+      release: options.release,
+      shop: options.shop,
+      note: options.note,
+      endpoint:
+        options.endpoint || process.env.DOZENFOLD_ENDPOINT || 'https://ingest.dozenfold.com',
+      token: process.env.DOZENFOLD_SOURCE_MAP_TOKEN,
+    });
+    process.stdout.write(
+      options.json ? `${JSON.stringify(marked)}\n` : `Marked release ${marked.release}.\n`,
+    );
+  } else if (options.command === 'inject') {
     const prepared = await injectSourceMapDebugIds(options.manifest);
     process.stdout.write(
       options.json
@@ -79,7 +116,7 @@ try {
     }
   }
 } catch (error) {
-  const message = error instanceof Error ? error.message : 'Unknown source-map CLI failure.';
-  process.stderr.write(`Dozenfold source-map error: ${message}\n`);
+  const message = error instanceof Error ? error.message : 'Unknown CLI failure.';
+  process.stderr.write(`Dozenfold error: ${message}\n`);
   process.exitCode = error instanceof SourceMapCliError ? error.exitCode : 1;
 }

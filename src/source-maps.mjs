@@ -566,3 +566,50 @@ export async function runSourceMapCommand({
     artifacts: results,
   };
 }
+
+const RELEASE_NOTE_MAX = 280;
+
+/** Mark a deployed release so Dozenfold compares before/after and tags storefront events with it. */
+export async function createReleaseMarker({
+  release: rawRelease,
+  shop: rawShop,
+  note: rawNote,
+  endpoint: rawEndpoint,
+  token: rawToken,
+  transport,
+}) {
+  const release = String(rawRelease || '').trim();
+  if (!RELEASE_RE.test(release)) {
+    throw new SourceMapCliError('Release must be 1-128 characters: letters, digits and ._:@/+~-');
+  }
+  const note = typeof rawNote === 'string' && rawNote.trim() ? rawNote.trim() : undefined;
+  if (note && note.length > RELEASE_NOTE_MAX) {
+    throw new SourceMapCliError(`Release note must be at most ${RELEASE_NOTE_MAX} characters.`);
+  }
+  const endpoint = normalizeEndpoint(rawEndpoint);
+  const shop = assertShop(rawShop);
+  const token = assertToken(rawToken);
+  try {
+    const body = await requestJson(
+      `${endpoint}/v1/shops/${encodeURIComponent(shop)}/release-markers`,
+      {
+        method: 'POST',
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/json',
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ release, ...(note ? { note } : {}) }),
+      },
+      { ...transport, secret: token },
+    );
+    return { release: body?.release ?? release, marked_at: body?.marked_at ?? null };
+  } catch (error) {
+    if (error instanceof SourceMapCliError && error.message.includes('(403)')) {
+      throw new SourceMapCliError(
+        'This credential cannot mark releases. Create a new CI credential in Dozenfold → Releases → Source maps.',
+      );
+    }
+    throw error;
+  }
+}

@@ -8,6 +8,7 @@ import { runInNewContext } from 'node:vm';
 import { afterEach, test } from 'node:test';
 import {
   canonicalizeMinifiedUrl,
+  createReleaseMarker,
   injectSourceMapDebugIds,
   loadSourceMapManifest,
   normalizeEndpoint,
@@ -450,3 +451,104 @@ for (const shop of ['fixture.myshopify.com', 'site_3905fd50-d21c-4c22-adfc-541b6
     }
   });
 }
+
+test('marks a release with the CI credential and explains a credential without the release scope', async () => {
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url: String(url), init });
+    return Response.json({ release: 'git-abc1234', marked_at: '2026-10-04T10:00:00.000Z', note: 'deploy' });
+  };
+  const marked = await createReleaseMarker({
+    release: ' git-abc1234 ',
+    shop: 'Fixture.myshopify.com',
+    note: ' deploy ',
+    endpoint: 'https://ingest.example.com/',
+    token: TOKEN,
+    transport: { fetchImpl },
+  });
+  assert.deepEqual(marked, { release: 'git-abc1234', marked_at: '2026-10-04T10:00:00.000Z' });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://ingest.example.com/v1/shops/fixture.myshopify.com/release-markers');
+  assert.equal(calls[0].init.method, 'POST');
+  assert.equal(calls[0].init.headers.authorization, `Bearer ${TOKEN}`);
+  assert.deepEqual(JSON.parse(calls[0].init.body), { release: 'git-abc1234', note: 'deploy' });
+
+  await assert.rejects(
+    createReleaseMarker({
+      release: 'git-abc1234',
+      shop: 'fixture.myshopify.com',
+      token: TOKEN,
+      transport: {
+        fetchImpl: async () => Response.json({ error: 'source map credential scope denied' }, { status: 403 }),
+      },
+    }),
+    /cannot mark releases\. Create a new CI credential/,
+  );
+  for (const bad of [{ release: 'has space' }, { release: 'ok', note: 'x'.repeat(281) }]) {
+    await assert.rejects(
+      createReleaseMarker({ shop: 'fixture.myshopify.com', token: TOKEN, ...bad, transport: { fetchImpl } }),
+    );
+  }
+  assert.equal(calls.length, 1);
+});
+
+async function markWithLocalServer(entry, args, env) {
+  const requests = [];
+  const server = createServer(async (request, response) => {
+    let body = '';
+    for await (const chunk of request) body += chunk;
+    requests.push({ method: request.method, url: request.url, auth: request.headers.authorization, body: JSON.parse(body) });
+    response.setHeader('content-type', 'application/json');
+    response.end(JSON.stringify({ release: 'git-abc1234', marked_at: '2026-10-04T10:00:00.000Z' }));
+  });
+  await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
+  const { port } = server.address();
+  const outputDirectory = await mkdtemp(join(tmpdir(), 'dozenfold-release-'));
+  temporaryDirectories.push(outputDirectory);
+  const outputPath = join(outputDirectory, 'output');
+  await writeFile(outputPath, '');
+  const child = spawn(process.execPath, [new URL(entry, import.meta.url).pathname, ...args], {
+    env: { ...process.env, ...env(`http://127.0.0.1:${port}`), GITHUB_OUTPUT: outputPath },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let stdout = '';
+  let stderr = '';
+  child.stdout.on('data', (chunk) => (stdout += chunk));
+  child.stderr.on('data', (chunk) => (stderr += chunk));
+  const exitCode = await new Promise((resolveExit) => child.on('close', resolveExit));
+  server.close();
+  return { exitCode, stdout, stderr, requests, outputs: await readFile(outputPath, 'utf8') };
+}
+
+test('the CLI marks a release from CI', async () => {
+  const result = await markWithLocalServer(
+    '../bin/dozenfold.mjs',
+    ['releases', 'create', '--release', 'git-abc1234', '--shop', 'fixture.myshopify.com', '--note', 'deploy'],
+    (endpoint) => ({ DOZENFOLD_SOURCE_MAP_TOKEN: TOKEN, DOZENFOLD_ENDPOINT: endpoint }),
+  );
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.match(result.stdout, /Marked release git-abc1234\./);
+  assert.deepEqual(result.requests, [
+    {
+      method: 'POST',
+      url: '/v1/shops/fixture.myshopify.com/release-markers',
+      auth: `Bearer ${TOKEN}`,
+      body: { release: 'git-abc1234', note: 'deploy' },
+    },
+  ]);
+});
+
+test('the action release command marks a release without a manifest', async () => {
+  const result = await markWithLocalServer('../action.mjs', [], (endpoint) => ({
+    INPUT_COMMAND: 'release',
+    INPUT_RELEASE: 'git-abc1234',
+    INPUT_SHOP: 'fixture.myshopify.com',
+    INPUT_TOKEN: TOKEN,
+    INPUT_ENDPOINT: endpoint,
+  }));
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.doesNotMatch(`${result.stdout}${result.stderr}`, new RegExp(TOKEN));
+  assert.equal(result.requests.length, 1);
+  assert.deepEqual(result.requests[0].body, { release: 'git-abc1234' });
+  assert.match(result.outputs, /release<<dozenfold_[\s\S]*git-abc1234/);
+});
