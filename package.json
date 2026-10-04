@@ -1,0 +1,34 @@
+{
+  "name": "@dozenfold/cli",
+  "version": "0.1.0",
+  "description": "Dozenfold release tooling",
+  "homepage": "https://docs.dozenfold.com/docs/source-maps",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Dozenfold/cli.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "bin": {
+    "dozenfold": "./bin/dozenfold.mjs"
+  },
+  "files": [
+    "README.md",
+    "action.yml",
+    "action.mjs",
+    "bin",
+    "src"
+  ],
+  "scripts": {
+    "build": "node --check bin/dozenfold.mjs && node --check action.mjs && node --check src/source-maps.mjs",
+    "typecheck": "node --check bin/dozenfold.mjs && node --check action.mjs && node --check src/source-maps.mjs",
+    "test": "node --test test/*.test.mjs",
+    "lint": "node --check bin/dozenfold.mjs && node --check action.mjs && node --check src/source-maps.mjs"
+  },
+  "engines": {
+    "node": ">=20.19"
+  },
+  "license": "UNLICENSED"
+}

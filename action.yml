@@ -1,0 +1,38 @@
+name: Dozenfold source maps
+description: Upload and verify an exact release-scoped Dozenfold source-map manifest.
+branding:
+  icon: upload-cloud
+  color: purple
+inputs:
+  manifest:
+    description: Path to the injected version 2 Dozenfold source-map manifest.
+    required: true
+  shop:
+    description: Canonical shop hostname that owns the credential and artifacts.
+    required: true
+  release:
+    description: Immutable release ID. Overrides the manifest release when supplied.
+    required: false
+  token:
+    description: Shop-scoped Dozenfold source-map credential. Pass a GitHub Actions secret.
+    required: true
+  endpoint:
+    description: Dozenfold ingest origin.
+    required: false
+    default: https://ingest.dozenfold.com
+  command:
+    description: upload (upload then verify) or verify (readiness only).
+    required: false
+    default: upload
+  verify-cdn:
+    description: Fetch the deployed bundle and require its digest to match (verify command only).
+    required: false
+    default: 'false'
+outputs:
+  release:
+    description: Verified immutable release ID.
+  artifact-count:
+    description: Number of verified artifacts.
+runs:
+  using: node24
+  main: action.mjs
